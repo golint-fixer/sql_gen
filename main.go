@@ -19,6 +19,7 @@ var (
 	}
 )
 
+// Column represents a sql column in it's corresponding Golang struct form
 type Column struct {
 	name, datatype string
 }
