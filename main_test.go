@@ -54,6 +54,15 @@ func TestGenScan(t *testing.T) {
 	}
 }
 
+func TestGetGoPackage(t *testing.T) {
+	name, _ := getGoPackage()
+	if name != expectedPackage {
+		t.Errorf("Improperly found go package")
+		t.Errorf("EXPECTED: %s\n", expectedPackage)
+		t.Errorf("RECEIVED: %s\n", name)
+	}
+}
+
 var (
 	testSchema = `CREATE TABLE courses_t (
     term character varying(32),
@@ -87,6 +96,7 @@ func (c courses_t) Scan(row *sql.Row) error {
 	return row.Scan(&c.Term, &c.Callnumber, &c.Classnotes, &c.Description)
 }`
 	expectedName    = "courses_t"
+	expectedPackage = "main"
 	expectedColumn0 = Column{
 		Attr:     "Term",
 		Name:     "term",
