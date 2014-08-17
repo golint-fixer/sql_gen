@@ -20,6 +20,7 @@ var (
 	}
 )
 
+// Schema is used to keep track of all information about a sql database schema.
 type Schema struct {
 	Name    string
 	Columns []Column
@@ -47,22 +48,23 @@ func generateStruct(s Schema) string {
 	return string(src)
 }
 
-func generateInsert(s Schema) string {
+func generateInsert(s Schema) (string, error) {
 	// form variable parts of statement
-	abbrev := s.Name[0]
+	abbrev := s.Name[0:1]
 	attributes := s.Columns[0].Name
 	sqlParameters := "$1"
-	parameters := fmt.Sprintf("%s.%s", abbrev, s.Columns[0].Name)
+	parameters := fmt.Sprintf("%s.%s", abbrev, s.Columns[0].Attr)
 	for i, c := range s.Columns[1:] {
 		attributes += fmt.Sprintf(", %s", c.Name)
-		sqlParameters += fmt.Sprintf(", $%d", i)
+		// offset 1 for sql, another 1 for starting on the 2nd elem
+		sqlParameters += fmt.Sprintf(", $%d", i+2)
 		parameters += fmt.Sprintf(", %s.%s", abbrev, c.Attr)
 	}
 
 	var buf bytes.Buffer
 	n, err := fmt.Fprintf(&buf, `
-func (%s %s) Insert (db *db.Sql) {
-	query := "INSERT INTO %s (%s) VALUES %s"
+func (%s %s) Insert (db *sql.DB) error {
+	query := "INSERT INTO %s (%s) VALUES (%s)"
 	_, err := db.Exec(query, %s)
 	if err != nil {
 		return fmt.Errorf("Failed to insert Course, %%#v, => %%s", c, err.Error())
@@ -70,13 +72,13 @@ func (%s %s) Insert (db *db.Sql) {
 	return nil
 }`, abbrev, s.Name, s.Name, attributes, sqlParameters, parameters)
 	if err != nil || n == 0 {
-		log.Fatal("Failed to properly render code while generating insert statement")
+		return "", fmt.Errorf("Failed to properly render code while generating insert statement")
 	}
 	src, err := format.Source(buf.Bytes())
 	if err != nil {
-		log.Fatal("Failed to properly fmt code while generating insert statement")
+		return "", fmt.Errorf("Failed to properly fmt code while generating insert statement")
 	}
-	return string(src)
+	return string(src), nil
 }
 
 // creates an array of Columns given a PG string of columns

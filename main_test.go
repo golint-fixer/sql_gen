@@ -26,6 +26,18 @@ func TestGenStruct(t *testing.T) {
 	structString := generateStruct(schema)
 	if structString != expectedStruct {
 		t.Errorf("Improperly generated struct string")
+		t.Errorf("EXPECTED: %s\n", expectedStruct)
+		t.Errorf("RECEIVED: %s\n", structString)
+	}
+}
+
+func TestGenInsert(t *testing.T) {
+	schema, _ := getSchemaData(testSchema)
+	insertFn, _ := generateInsert(schema)
+	if insertFn != expectedInsertMethod {
+		t.Errorf("Improperly generated insert method string")
+		t.Errorf("EXPECTED: %s\n", expectedInsertMethod)
+		t.Errorf("RECEIVED: %s\n", insertFn)
 	}
 }
 
@@ -33,27 +45,31 @@ var (
 	testSchema = `CREATE TABLE courses_t (
     term character varying(32),
     callnumber integer,
-    bulletinflags character varying(32),
     classnotes character varying(64),
-    starttime1 time without time zone,
     description text
 );`
 	testColumnString = `
     term character varying(32),
     callnumber integer,
-    bulletinflags character varying(32),
     classnotes character varying(64),
-    starttime1 time without time zone,
     description text
 `
 	expectedStruct = `type courses_t struct {
-	Term          string
-	Callnumber    int
-	Bulletinflags string
-	Classnotes    string
-	Starttime1    string
-	Description   string
+	Term        string
+	Callnumber  int
+	Classnotes  string
+	Description string
 }`
+	expectedInsertMethod = `
+func (c courses_t) Insert(db *sql.DB) error {
+	query := "INSERT INTO courses_t (term, callnumber, classnotes, description) VALUES ($1, $2, $3, $4)"
+	_, err := db.Exec(query, c.Term, c.Callnumber, c.Classnotes, c.Description)
+	if err != nil {
+		return fmt.Errorf("Failed to insert Course, %#v, => %s", c, err.Error())
+	}
+	return nil
+}`
+
 	expectedName    = "courses_t"
 	expectedColumn0 = Column{
 		Attr:     "Term",
