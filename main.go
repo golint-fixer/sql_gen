@@ -63,17 +63,30 @@ func (%s %s) Insert (db *sql.DB) error {
 }`, abbrev, s.Name, s.Name, attributes, sqlParameters, parameters)
 }
 
+func generateScan(s Schema) (string, error) {
+	// form variable parts of statement
+	abbrev := s.Name[0:1]
+	parameters := fmt.Sprintf("&%s.%s", abbrev, s.Columns[0].Attr)
+	for _, c := range s.Columns[1:] {
+		parameters += fmt.Sprintf(", &%s.%s", abbrev, c.Attr)
+	}
+	return gofmt(`
+func (%s %s) Scan(row *sql.Row) error {
+	return row.Scan(%s)
+}`, abbrev, s.Name, parameters)
+}
+
 func gofmt(src string, args ...interface{}) (string, error) {
 	var buf bytes.Buffer
 
 	n, err := fmt.Fprintf(&buf, src, args...)
 	if err != nil || n == 0 {
-		return "", fmt.Errorf("Failed to properly render code while generating")
+		return "", fmt.Errorf("Failed to properly render code while generating, %s", err.Error())
 	}
 
 	rendered, err := format.Source(buf.Bytes())
 	if err != nil {
-		return "", fmt.Errorf("Failed to properly fmt code while generating")
+		return "", fmt.Errorf("Failed to properly fmt code while generating, %s", err.Error())
 	}
 	return string(rendered), nil
 }

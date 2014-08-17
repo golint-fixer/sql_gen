@@ -41,6 +41,19 @@ func TestGenInsert(t *testing.T) {
 	}
 }
 
+func TestGenScan(t *testing.T) {
+	schema, _ := getSchemaData(testSchema)
+	scanFn, err := generateScan(schema)
+	if err != nil {
+		t.Error(err)
+	}
+	if scanFn != expectedScanMethod {
+		t.Errorf("Improperly generated scan method string")
+		t.Errorf("EXPECTED: %s\n", expectedScanMethod)
+		t.Errorf("RECEIVED: %s\n", scanFn)
+	}
+}
+
 var (
 	testSchema = `CREATE TABLE courses_t (
     term character varying(32),
@@ -69,7 +82,10 @@ func (c courses_t) Insert(db *sql.DB) error {
 	}
 	return nil
 }`
-
+	expectedScanMethod = `
+func (c courses_t) Scan(row *sql.Row) error {
+	return row.Scan(&c.Term, &c.Callnumber, &c.Classnotes, &c.Description)
+}`
 	expectedName    = "courses_t"
 	expectedColumn0 = Column{
 		Attr:     "Term",
