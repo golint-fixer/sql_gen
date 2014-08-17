@@ -23,7 +23,7 @@ func TestParseColumns(t *testing.T) {
 
 func TestGenStruct(t *testing.T) {
 	schema, _ := getSchemaData(testSchema)
-	structString := generateStruct(schema)
+	structString, _ := generateStruct(schema)
 	if structString != expectedStruct {
 		t.Errorf("Improperly generated struct string")
 		t.Errorf("EXPECTED: %s\n", expectedStruct)

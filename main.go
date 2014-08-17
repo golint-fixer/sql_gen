@@ -31,21 +31,12 @@ type Column struct {
 	Attr, Name, DataType string
 }
 
-func generateStruct(s Schema) string {
+func generateStruct(s Schema) (string, error) {
 	attributes := ""
 	for _, c := range s.Columns {
 		attributes += fmt.Sprintf("%s %s\n", c.Attr, c.DataType)
 	}
-	var buf bytes.Buffer
-	n, err := fmt.Fprintf(&buf, `type %s struct {%s}`, s.Name, attributes)
-	if err != nil || n == 0 {
-		log.Fatal("Failed to properly render code while generating struct")
-	}
-	src, err := format.Source(buf.Bytes())
-	if err != nil {
-		log.Fatal("Failed to properly fmt code while generating struct")
-	}
-	return string(src)
+	return gofmt(`type %s struct {%s}`, s.Name, attributes)
 }
 
 func generateInsert(s Schema) (string, error) {
@@ -61,8 +52,7 @@ func generateInsert(s Schema) (string, error) {
 		parameters += fmt.Sprintf(", %s.%s", abbrev, c.Attr)
 	}
 
-	var buf bytes.Buffer
-	n, err := fmt.Fprintf(&buf, `
+	return gofmt(`
 func (%s %s) Insert (db *sql.DB) error {
 	query := "INSERT INTO %s (%s) VALUES (%s)"
 	_, err := db.Exec(query, %s)
@@ -71,14 +61,21 @@ func (%s %s) Insert (db *sql.DB) error {
 	}
 	return nil
 }`, abbrev, s.Name, s.Name, attributes, sqlParameters, parameters)
+}
+
+func gofmt(src string, args ...interface{}) (string, error) {
+	var buf bytes.Buffer
+
+	n, err := fmt.Fprintf(&buf, src, args...)
 	if err != nil || n == 0 {
-		return "", fmt.Errorf("Failed to properly render code while generating insert statement")
+		return "", fmt.Errorf("Failed to properly render code while generating")
 	}
-	src, err := format.Source(buf.Bytes())
+
+	rendered, err := format.Source(buf.Bytes())
 	if err != nil {
-		return "", fmt.Errorf("Failed to properly fmt code while generating insert statement")
+		return "", fmt.Errorf("Failed to properly fmt code while generating")
 	}
-	return string(src), nil
+	return string(rendered), nil
 }
 
 // creates an array of Columns given a PG string of columns
