@@ -5,24 +5,30 @@ import (
 	"testing"
 )
 
-func TestGetTableName(t *testing.T) {
-	tableName := getTableName(testSchema)
+func TestGetData(t *testing.T) {
+	tableName, columns := getSchemaData(testSchema)
 	if tableName != expectedName {
 		t.Errorf("incorrectly found table name, found %s", tableName)
 	}
-}
-
-func TestGetColumns(t *testing.T) {
-	columns := getColumns(testSchema)
 	if !strings.Contains(columns, `bulletinflags character varying(32),`) {
 		t.Errorf("improperly found columns, should contain all columns")
 	}
 }
 
 func TestParseColumns(t *testing.T) {
-	columns := parseColumns(getColumns(testSchema))
+	_, col := getSchemaData(testSchema)
+	columns := parseColumns(col)
 	if columns[0] != expectedColumn0 {
 		t.Errorf("improperly parsed column 0, should be %#v", expectedColumn0)
+	}
+}
+
+func TestGenStruct(t *testing.T) {
+	name, cols := getSchemaData(testSchema)
+	columns := parseColumns(cols)
+	structString := generateStruct(name, columns)
+	if structString != expectedStruct {
+		t.Errorf("Improperly generated struct string")
 	}
 }
 
@@ -33,12 +39,19 @@ var (
     bulletinflags character varying(32),
     classnotes character varying(64),
     starttime1 time without time zone,
-    endtime1 time without time zone,
     description text
 );`
+	expectedStruct = `type courses_t struct {
+	term          string
+	callnumber    int
+	bulletinflags string
+	classnotes    string
+	starttime1    string
+	description   string
+}`
 	expectedName    = "courses_t"
 	expectedColumn0 = Column{
-		name:     "term",
-		datatype: "string",
+		Name:     "term",
+		DataType: "string",
 	}
 )
