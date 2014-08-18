@@ -6,6 +6,7 @@ import (
 	"go/format"
 	"io/ioutil"
 	"log"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -73,10 +74,10 @@ func (%s %s) Insert (db *sql.DB) error {
 	query := "INSERT INTO %s (%s) VALUES (%s)"
 	_, err := db.Exec(query, %s)
 	if err != nil {
-		return fmt.Errorf("Failed to insert Course, %%#v, => %%s", c, err.Error())
+		return fmt.Errorf("Failed to insert Course, %%#v, => %%s", %s, err.Error())
 	}
 	return nil
-}`, abbrev, s.Name, s.Name, attributes, sqlParameters, parameters)
+}`, abbrev, s.Name, s.Name, attributes, sqlParameters, parameters, abbrev)
 }
 
 // generates a method for scanning a sql.Row into the generated struct
@@ -91,6 +92,68 @@ func generateScan(s Schema) (string, error) {
 func (%s %s) Scan(row *sql.Row) error {
 	return row.Scan(%s)
 }`, abbrev, s.Name, parameters)
+}
+
+func generateImports(s Schema) (string, error) {
+	// TODO: when implementing datetime fields, import "time"
+	return `
+import (
+	"database/sql"
+	"fmt"
+)`, nil
+}
+
+func generateFileString(s Schema) (string, error) {
+	// get the name of the golang package
+	packageName, err := getGoPackage()
+	if err != nil {
+		return "", fmt.Errorf(`Failed to find package name, defaulting to "main"`)
+	}
+
+	// get the imports
+	imports, err := generateImports(s)
+	if err != nil {
+		return "", fmt.Errorf("Error while generating imports => %s", err.Error())
+	}
+
+	// get struct
+	structString, err := generateStruct(s)
+	if err != nil {
+		return "", fmt.Errorf("Error while generating struct => %s", err.Error())
+	}
+
+	// get sql row scanner
+	scanString, err := generateScan(s)
+	if err != nil {
+		return "", fmt.Errorf("Error while generating Scan method => %s", err.Error())
+	}
+
+	// get sql insert
+	insertString, err := generateInsert(s)
+	if err != nil {
+		return "", fmt.Errorf("Error while generating Insert method => %s", err.Error())
+	}
+
+	return gofmt(`
+package %s
+%s
+%s
+%s
+%s`, packageName, imports, structString, scanString, insertString)
+}
+
+func generateGoFile(s Schema, path string) error {
+	fileString, err := generateFileString(s)
+	if err != nil {
+		fmt.Errorf("Failed to generate go file string => %s", err.Error())
+	}
+
+	buf := bytes.NewBufferString(fileString)
+	err = ioutil.WriteFile(path, buf.Bytes(), 0644)
+	if err != nil {
+		fmt.Errorf("Failed to write go file => %s", err.Error())
+	}
+	return nil
 }
 
 // string formats with the arguments then adds itself to gofmt standard
@@ -122,7 +185,7 @@ func parseColumns(columnStr string) []Column {
 			log.Fatalf("DataType %s not yet supported\n", pgType)
 		}
 		tableColumns[i] = Column{
-			// make sure the golang attribute starts with an uppercase letter
+			// make sure the golang attribute starts with an uppercase letter so it's public
 			Attr:     strings.ToUpper(name[0:1]) + name[1:],
 			Name:     name,
 			DataType: goType,
@@ -177,5 +240,24 @@ func getGoPackage() (string, error) {
 	return "main", returnErr
 }
 
+func readStdin() Schema {
+	stdinBytes, err := ioutil.ReadAll(os.Stdin)
+	if err != nil {
+		log.Fatalf("Failed to read in stdin => %s", err.Error())
+	}
+
+	s, err := getSchemaData(string(stdinBytes))
+	if err != nil {
+		log.Fatalf("Failed to parse stdin into schema => %s", err.Error())
+	}
+
+	return s
+}
+
 func main() {
+	s := readStdin()
+	err := generateGoFile(s, fmt.Sprintf("./%s_sql.go", s.Name))
+	if err != nil {
+		log.Fatalf("Failed to generate file => %s", err.Error())
+	}
 }

@@ -7,3 +7,11 @@
 
 Generates basic structs and methods based on a SQL schema passed in.
 
+## Generating your schema
+
+#### Postgres
+
+```bash
+pg_dump -s yourdatabasename > schema.sql
+```
+
