@@ -16,24 +16,43 @@ var (
 	tableRegex     = regexp.MustCompile(`CREATE TABLE (\w+) \(((?s).*)\);`)
 	goFileRegex    = regexp.MustCompile(`(.+).go`)
 	goPackageRegex = regexp.MustCompile(`package (\w+)`)
-	pgConv         = map[string]string{
-		"text":                   "string",
-		"character varying(32)":  "string",
-		"character varying(64)":  "string",
-		"time without time zone": "string",
-		"integer":                "int",
+	stringType     = goType{
+		name: "string",
+		fn:   "%s"}
+	intType = goType{
+		name: "int",
+		fn:   "%s",
+	}
+	timeWOTZ = goType{
+		name:         "time.Time",
+		fn:           `%s.Format("15:04")`,
+		importNeeded: `"time"`,
+	}
+	pgConv = map[string]goType{
+		"text":                   stringType,
+		"character varying(32)":  stringType,
+		"character varying(64)":  stringType,
+		"time without time zone": timeWOTZ,
+		"integer":                intType,
 	}
 )
+
+type goType struct {
+	name, fn, importNeeded string
+}
 
 // Schema is used to keep track of all information about a sql database schema.
 type Schema struct {
 	Name    string
+	Imports map[string]interface{}
 	Columns []Column
 }
 
 // Column represents a sql column in it's corresponding Golang struct form
 type Column struct {
-	Attr, Name, DataType string
+	Attr     string
+	Name     string
+	DataType goType
 }
 
 func getSchemaData(schema string) (Schema, error) {
@@ -41,32 +60,39 @@ func getSchemaData(schema string) (Schema, error) {
 	if len(result) != 3 {
 		log.Fatal("Failed to find schema in file provided")
 	}
+	imports, columns := parseColumns(result[2])
 	return Schema{
 		Name:    result[1],
-		Columns: parseColumns(result[2]),
+		Imports: imports,
+		Columns: columns,
 	}, nil
 }
 
 // creates an array of Columns given a PG string of columns
-func parseColumns(columnStr string) []Column {
+func parseColumns(columnStr string) (map[string]interface{}, []Column) {
 	columns := strings.Split(columnStr, `,`)
 	tableColumns := make([]Column, len(columns)) // we know the exact size
+	imports := make(map[string]interface{})
 
 	for i, c := range columns {
 		data := strings.SplitN(strings.Trim(c, " \n"), " ", 2)
 		name, pgType := data[0], data[1]
-		goType, match := pgConv[pgType]
+		golangType, match := pgConv[pgType]
 		if !match {
 			log.Fatalf("DataType %s not yet supported\n", pgType)
 		}
+
 		tableColumns[i] = Column{
 			// make sure the golang attribute starts with an uppercase letter so it's public
 			Attr:     strings.ToUpper(name[0:1]) + name[1:],
 			Name:     name,
-			DataType: goType,
+			DataType: golangType,
+		}
+		if golangType.importNeeded != "" {
+			imports[golangType.importNeeded] = 0
 		}
 	}
-	return tableColumns
+	return imports, tableColumns
 }
 
 // finds the name of the go package for this directory
@@ -76,7 +102,7 @@ func getGoPackage() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("Failed to read files in directory => %s", err.Error())
 	}
-	var returnErr error = nil
+	var returnErr error
 
 	// iterate over all matches, will process files until a match is found
 	for _, f := range files {

@@ -3,7 +3,11 @@ package main
 import "testing"
 
 func TestGetData(t *testing.T) {
-	schema, _ := getSchemaData(testSchema)
+	schema, err := getSchemaData(testSchema)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	if schema.Name != expectedName {
 		t.Errorf("incorrectly found table name, found %s", schema.Name)
 	}
@@ -14,7 +18,7 @@ func TestGetData(t *testing.T) {
 }
 
 func TestParseColumns(t *testing.T) {
-	columns := parseColumns(testColumnString)
+	_, columns := parseColumns(testColumnString)
 	if columns[0] != expectedColumn0 {
 		t.Errorf("improperly parsed column 0, should be %#v", expectedColumn0)
 		t.Errorf("Recieved: %#v\n", columns[0])
@@ -22,8 +26,16 @@ func TestParseColumns(t *testing.T) {
 }
 
 func TestGenStruct(t *testing.T) {
-	schema, _ := getSchemaData(testSchema)
-	structString, _ := generateStruct(schema)
+	schema, err := getSchemaData(testSchema)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	structString, err := generateStruct(schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	if structString != expectedStruct {
 		t.Errorf("Improperly generated struct string")
 		t.Errorf("EXPECTED: %s\n", expectedStruct)
@@ -32,8 +44,17 @@ func TestGenStruct(t *testing.T) {
 }
 
 func TestGenInsert(t *testing.T) {
-	schema, _ := getSchemaData(testSchema)
-	insertFn, _ := generateInsert(schema)
+	schema, err := getSchemaData(testSchema)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	insertFn, err := generateInsert(schema)
+	if err != nil {
+		t.Errorf(insertFn)
+		t.Fatal(err)
+	}
+
 	if insertFn != expectedInsertMethod {
 		t.Errorf("Improperly generated insert method string")
 		t.Errorf("EXPECTED: %s\n", expectedInsertMethod)
@@ -68,38 +89,54 @@ var (
     term character varying(32),
     callnumber integer,
     classnotes character varying(64),
+    starttime1 time without time zone,
     description text
 );`
 	testColumnString = `
     term character varying(32),
     callnumber integer,
     classnotes character varying(64),
+    starttime1 time without time zone,
     description text
 `
 	expectedStruct = `type courses_t struct {
 	Term        string
 	Callnumber  int
 	Classnotes  string
+	Starttime1  time.Time
 	Description string
 }`
 	expectedInsertMethod = `
 func (c courses_t) Insert(db *sql.DB) error {
-	query := "INSERT INTO courses_t (term, callnumber, classnotes, description) VALUES ($1, $2, $3, $4)"
-	_, err := db.Exec(query, c.Term, c.Callnumber, c.Classnotes, c.Description)
+	query := "INSERT INTO courses_t (term, callnumber, classnotes, starttime1, description) VALUES ($1, $2, $3, $4, $5)"
+	_, err := db.Exec(
+		query,
+		c.Term,
+		c.Callnumber,
+		c.Classnotes,
+		c.Starttime1.Format("15:04"),
+		c.Description,
+	)
 	if err != nil {
-		return fmt.Errorf("Failed to insert Course, %#v, => %s", c, err.Error())
+		return fmt.Errorf("Failed to insert courses_t, %#v, => %s", c, err.Error())
 	}
 	return nil
 }`
 	expectedScanMethod = `
-func (c courses_t) Scan(row *sql.Row) error {
-	return row.Scan(&c.Term, &c.Callnumber, &c.Classnotes, &c.Description)
+func (c *courses_t) Scan(row *sql.Row) error {
+	return row.Scan(
+		&c.Term,
+		&c.Callnumber,
+		&c.Classnotes,
+		&c.Starttime1,
+		&c.Description,
+	)
 }`
 	expectedName    = "courses_t"
 	expectedPackage = "main"
 	expectedColumn0 = Column{
 		Attr:     "Term",
 		Name:     "term",
-		DataType: "string",
+		DataType: goType{"string", "%s", ""},
 	}
 )

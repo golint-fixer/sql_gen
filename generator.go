@@ -10,7 +10,7 @@ import (
 func generateStruct(s Schema) (string, error) {
 	attributes := ""
 	for _, c := range s.Columns {
-		attributes += fmt.Sprintf("%s %s\n", c.Attr, c.DataType)
+		attributes += fmt.Sprintf("%s %s\n", c.Attr, c.DataType.name)
 	}
 	return gofmt(`type %s struct {%s}`, s.Name, attributes)
 }
@@ -21,46 +21,60 @@ func generateInsert(s Schema) (string, error) {
 	abbrev := s.Name[0:1]
 	attributes := s.Columns[0].Name
 	sqlParameters := "$1"
-	parameters := fmt.Sprintf("%s.%s", abbrev, s.Columns[0].Attr)
+	parameters := fmt.Sprintf(
+		"%s.%s,\n",
+		abbrev,
+		fmt.Sprintf(s.Columns[0].DataType.fn, s.Columns[0].Attr),
+	)
 	for i, c := range s.Columns[1:] {
 		attributes += fmt.Sprintf(", %s", c.Name)
 		// offset 1 for sql, another 1 for starting on the 2nd elem
 		sqlParameters += fmt.Sprintf(", $%d", i+2)
-		parameters += fmt.Sprintf(", %s.%s", abbrev, c.Attr)
+		parameters += fmt.Sprintf(c.DataType.fn, fmt.Sprintf("%s.%s", abbrev, c.Attr)) + ",\n"
 	}
 
 	return gofmt(`
 func (%s %s) Insert (db *sql.DB) error {
 	query := "INSERT INTO %s (%s) VALUES (%s)"
-	_, err := db.Exec(query, %s)
+	_, err := db.Exec(
+		query,
+		%s
+	)
 	if err != nil {
-		return fmt.Errorf("Failed to insert Course, %%#v, => %%s", %s, err.Error())
+		return fmt.Errorf("Failed to insert %s, %%#v, => %%s", %s, err.Error())
 	}
 	return nil
-}`, abbrev, s.Name, s.Name, attributes, sqlParameters, parameters, abbrev)
+}`, abbrev, s.Name, s.Name, attributes, sqlParameters, parameters, s.Name, abbrev)
 }
 
 // generates a method for scanning a sql.Row into the generated struct
 func generateScan(s Schema) (string, error) {
 	// form variable parts of statement
 	abbrev := s.Name[0:1]
-	parameters := fmt.Sprintf("&%s.%s", abbrev, s.Columns[0].Attr)
+	parameters := fmt.Sprintf("&%s.%s,", abbrev, s.Columns[0].Attr)
 	for _, c := range s.Columns[1:] {
-		parameters += fmt.Sprintf(", &%s.%s", abbrev, c.Attr)
+		parameters += fmt.Sprintf("\n&%s.%s,", abbrev, c.Attr)
 	}
 	return gofmt(`
-func (%s %s) Scan(row *sql.Row) error {
-	return row.Scan(%s)
+func (%s *%s) Scan(row *sql.Row) error {
+	return row.Scan(
+		%s
+	)
 }`, abbrev, s.Name, parameters)
 }
 
 func generateImports(s Schema) (string, error) {
-	// TODO: when implementing datetime fields, import "time"
-	return `
+	imports := ""
+	for i := range s.Imports {
+		imports += i + "\n"
+	}
+
+	return fmt.Sprintf(`
 import (
 	"database/sql"
 	"fmt"
-)`, nil
+	%s
+)`, imports), nil
 }
 
 func generateFileString(s Schema) (string, error) {
@@ -105,13 +119,13 @@ package %s
 func generateGoFile(s Schema, path string) error {
 	fileString, err := generateFileString(s)
 	if err != nil {
-		fmt.Errorf("Failed to generate go file string => %s", err.Error())
+		return fmt.Errorf("Failed to generate go file string => %s", err.Error())
 	}
 
 	buf := bytes.NewBufferString(fileString)
 	err = ioutil.WriteFile(path, buf.Bytes(), 0644)
 	if err != nil {
-		fmt.Errorf("Failed to write go file => %s", err.Error())
+		return fmt.Errorf("Failed to write go file => %s", err.Error())
 	}
 	return nil
 }
@@ -125,6 +139,7 @@ func gofmt(src string, args ...interface{}) (string, error) {
 		return "", fmt.Errorf("Failed to properly render code while generating, %s", err.Error())
 	}
 
+	// fmt.Println(buf.String())
 	rendered, err := format.Source(buf.Bytes())
 	if err != nil {
 		return "", fmt.Errorf("Failed to properly fmt code while generating, %s", err.Error())
