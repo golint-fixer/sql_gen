@@ -27,7 +27,7 @@ pg_dump -s test > schema.sql
 ```
 
 Input schema:
-```
+```sql
 CREATE TABLE test (
     term character varying(32),
     callnumber integer,

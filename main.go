@@ -16,25 +16,6 @@ var (
 	tableRegex     = regexp.MustCompile(`CREATE TABLE (\w+) \(((?s).*)\);`)
 	goFileRegex    = regexp.MustCompile(`(.+).go`)
 	goPackageRegex = regexp.MustCompile(`package (\w+)`)
-	stringType     = goType{
-		name: "string",
-		fn:   "%s"}
-	intType = goType{
-		name: "int",
-		fn:   "%s",
-	}
-	timeWOTZ = goType{
-		name:         "time.Time",
-		fn:           `%s.Format("15:04")`,
-		importNeeded: `"time"`,
-	}
-	pgConv = map[string]goType{
-		"text":                   stringType,
-		"character varying(32)":  stringType,
-		"character varying(64)":  stringType,
-		"time without time zone": timeWOTZ,
-		"integer":                intType,
-	}
 )
 
 type goType struct {
@@ -77,7 +58,7 @@ func parseColumns(columnStr string) (map[string]interface{}, []Column) {
 	for i, c := range columns {
 		data := strings.SplitN(strings.Trim(c, " \n"), " ", 2)
 		name, pgType := data[0], data[1]
-		golangType, match := pgConv[pgType]
+		golangType, match := translatePGType(pgType)
 		if !match {
 			log.Fatalf("DataType %s not yet supported\n", pgType)
 		}
@@ -93,6 +74,31 @@ func parseColumns(columnStr string) (map[string]interface{}, []Column) {
 		}
 	}
 	return imports, tableColumns
+}
+
+func translatePGType(pgType string) (goType, bool) {
+	switch pgType {
+	case "text",
+		"character varying(32)",
+		"character varying(64)",
+		"character varying(32) NOT NULL",
+		"character varying(64) NOT NULL":
+		return goType{
+			name: "string",
+			fn:   "%s"}, true
+	case "time without time zone":
+		return goType{
+			name:         "time.Time",
+			fn:           `%s.Format("15:04")`,
+			importNeeded: `"time"`,
+		}, true
+	case "integer":
+		return goType{
+			name: "int",
+			fn:   "%s",
+		}, true
+	}
+	return goType{}, false
 }
 
 // finds the name of the go package for this directory
