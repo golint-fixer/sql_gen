@@ -2,8 +2,10 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"go/format"
+	"io"
 	"io/ioutil"
 	"log"
 	"os"
@@ -13,13 +15,15 @@ import (
 )
 
 var (
-	tableRegex     = regexp.MustCompile(`CREATE TABLE (\w+) \(((?s).*)\);`)
+	tableRegex     = regexp.MustCompile(`CREATE TABLE (\w+) \(((?s).*?)\);((?s).*\z)`)
 	goFileRegex    = regexp.MustCompile(`(.+).go`)
 	goPackageRegex = regexp.MustCompile(`package (\w+)`)
 )
 
 type goType struct {
-	name, fn, importNeeded string
+	name         string // the name of the golang type to be used
+	fn           string // the string statement to be used in the insert statement
+	importNeeded string // for necessary golang imports
 }
 
 // Schema is used to keep track of all information about a sql database schema.
@@ -36,17 +40,17 @@ type Column struct {
 	DataType goType
 }
 
-func getSchemaData(schema string) (Schema, error) {
+func getSchemaData(schema string) (Schema, string, error) {
 	result := tableRegex.FindStringSubmatch(schema)
-	if len(result) != 3 {
-		log.Fatal("Failed to find schema in file provided")
+	if len(result) != 4 {
+		return Schema{}, "", errors.New("Failed to find schema in file provided")
 	}
 	imports, columns := parseColumns(result[2])
 	return Schema{
 		Name:    result[1],
 		Imports: imports,
 		Columns: columns,
-	}, nil
+	}, result[3], nil
 }
 
 // creates an array of Columns given a PG string of columns
@@ -58,8 +62,8 @@ func parseColumns(columnStr string) (map[string]interface{}, []Column) {
 	for i, c := range columns {
 		data := strings.SplitN(strings.Trim(c, " \n"), " ", 2)
 		name, pgType := data[0], data[1]
-		golangType, match := translatePGType(pgType)
-		if !match {
+		golangType := translatePGType(pgType)
+		if golangType.name == "" {
 			log.Fatalf("DataType %s not yet supported\n", pgType)
 		}
 
@@ -76,7 +80,7 @@ func parseColumns(columnStr string) (map[string]interface{}, []Column) {
 	return imports, tableColumns
 }
 
-func translatePGType(pgType string) (goType, bool) {
+func translatePGType(pgType string) goType {
 	switch pgType {
 	case "text",
 		"character varying(32)",
@@ -85,20 +89,28 @@ func translatePGType(pgType string) (goType, bool) {
 		"character varying(64) NOT NULL":
 		return goType{
 			name: "string",
-			fn:   "%s"}, true
+			fn:   "%s"}
+	case "boolean":
+		return goType{
+			name: "bool",
+			fn:   "%s"}
+	case "double precision":
+		return goType{
+			name: "float64",
+			fn:   "%s"}
 	case "time without time zone":
 		return goType{
 			name:         "time.Time",
 			fn:           `%s.Format("15:04")`,
 			importNeeded: `"time"`,
-		}, true
+		}
 	case "integer":
 		return goType{
 			name: "int",
 			fn:   "%s",
-		}, true
+		}
 	}
-	return goType{}, false
+	return goType{}
 }
 
 // finds the name of the go package for this directory
@@ -147,24 +159,37 @@ func getGoPackage() (string, error) {
 	return "main", returnErr
 }
 
-func readStdin() Schema {
-	stdinBytes, err := ioutil.ReadAll(os.Stdin)
+func readInSchema(src io.Reader) []Schema {
+	stdinBytes, err := ioutil.ReadAll(src)
 	if err != nil {
 		log.Fatalf("Failed to read in stdin => %s", err.Error())
 	}
 
-	s, err := getSchemaData(string(stdinBytes))
-	if err != nil {
-		log.Fatalf("Failed to parse stdin into schema => %s", err.Error())
+	var s Schema
+	schemaString := string(stdinBytes)
+	schemas := []Schema{}
+	for {
+		s, schemaString, err = getSchemaData(schemaString)
+		if err != nil {
+			break
+		}
+		schemas = append(schemas, s)
 	}
 
-	return s
+	return schemas
 }
 
 func main() {
-	s := readStdin()
-	err := generateGoFile(s, fmt.Sprintf("./%s_sql.go", s.Name))
-	if err != nil {
-		log.Fatalf("Failed to generate file => %s", err.Error())
+	s := readInSchema(os.Stdin)
+	if len(s) == 0 {
+		log.Fatal("No sql tables schemas found.")
+	}
+
+	for _, schema := range s {
+		log.Printf("Generating functions for %s", schema.Name)
+		err := generateGoFile(schema, fmt.Sprintf("./%s_sql.go", schema.Name))
+		if err != nil {
+			log.Fatalf("Failed to generate file => %s", err.Error())
+		}
 	}
 }

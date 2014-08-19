@@ -1,9 +1,12 @@
 package main
 
-import "testing"
+import (
+	"bytes"
+	"testing"
+)
 
 func TestGetData(t *testing.T) {
-	schema, err := getSchemaData(testSchema)
+	schema, _, err := getSchemaData(testSchema)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -26,7 +29,7 @@ func TestParseColumns(t *testing.T) {
 }
 
 func TestGenStruct(t *testing.T) {
-	schema, err := getSchemaData(testSchema)
+	schema, _, err := getSchemaData(testSchema)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +47,7 @@ func TestGenStruct(t *testing.T) {
 }
 
 func TestGenInsert(t *testing.T) {
-	schema, err := getSchemaData(testSchema)
+	schema, _, err := getSchemaData(testSchema)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +66,7 @@ func TestGenInsert(t *testing.T) {
 }
 
 func TestGenScan(t *testing.T) {
-	schema, _ := getSchemaData(testSchema)
+	schema, _, _ := getSchemaData(testSchema)
 	scanFn, err := generateScan(schema)
 	if err != nil {
 		t.Error(err)
@@ -84,6 +87,13 @@ func TestGetGoPackage(t *testing.T) {
 	}
 }
 
+func TestMultipleSchemas(t *testing.T) {
+	schemas := readInSchema(bytes.NewBufferString(testSchema + testSchema2))
+	if len(schemas) != 2 {
+		t.Errorf("Should've parsed 2 schemas")
+	}
+}
+
 var (
 	testSchema = `CREATE TABLE courses_t (
     term character varying(32),
@@ -91,6 +101,11 @@ var (
     classnotes character varying(64),
     starttime1 time without time zone,
     description text
+);`
+	testSchema2 = `CREATE TABLE users_t (
+	email character varying(64) NOT NULL,
+	token character varying(32) NOT NULL,
+	name character varying(64) NOT NULL
 );`
 	testColumnString = `
     term character varying(32),

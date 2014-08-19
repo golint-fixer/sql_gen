@@ -1,0 +1,9 @@
+# binary
+sql_gen
+
+# test code
+*.sql
+
+# generated
+test_sql.go
+
